@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Musical Tunings</title>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js"></script>
+    <script src="d3/d3.v2.js"></script>
+    <script src="raphael/raphael-min.js"></script>
+    <script src="qwerty-hancock/qwerty-hancock.min.js"></script>
+  <style>
+body
+{
+  text-align: center;
+}
+
+div#root
+{
+  width: 800px;
+  margin: 0 auto;
+}
+
+ul, li
+{
+  clear: both;
+  text-align: left;
+  list-style: none;
+}
+
+li input
+{
+  margin-left: 50px;
+}
+
+div.scale
+{
+  float: left;
+}
+
+line.scale
+{
+  stroke: black;
+  stroke-width: 1.5px;
+}
+  </style>
+  </head>
+  <body>
+    <div id="root">
+      <div id="keyboard"></div>
+      <form action="#">
+        <ul>
+          <li>
+          <div class="scale" id="svg_pythagorean"></div>
+          <input type="radio" name="tuning" id="pythagorean-c" value="pythagorean" />
+          <label for="pythagorean-c">
+            <span>Pythagorean (centered in C)</span>
+          </label>
+          </li>
+          <li>
+          <div class="scale" id="svg_5-limit-standard"></div>
+          <input type="radio" name="tuning" id="five-limit-standard" value="5-limit-standard" />
+          <label for="five-limit-standard">
+            <span>5-limit standard (centered in C)</span>
+          </label>
+          </li>
+          <li>
+          <div class="scale" id="svg_5-limit-extended"></div>
+          <input type="radio" name="tuning" id="five-limit-extended" value="5-limit-extended" />
+          <label for="five-limit-extended">
+            <span>5-limit extended (centered in C)</span>
+          </label>
+          </li>
+          <li>
+          <div class="scale" id="svg_equal"></div>
+          <input type="radio" name="tuning" id="equal" value="equal" checked="checked"/>
+          <label for="equal">
+            <span>Equal</span>
+          </label>
+          </li>
+        </ul>
+      </form>
+    </div>
+<script>
+var A_from_C = 9;
+var _range_13 = Array(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12);
+var scales = {
+  'pythagorean': [1, 256/243, 9/8, 32/27, 81/64, 4/3, 729/512, 3/2,
+        128/81, 27/16, 16/9, 243/128, 2],
+  '5-limit-standard': [1, 16/15, 9/8, 6/5, 5/4, 4/3, 45/32, 3/2,
+        8/5, 5/3, 9/5, 15/8, 2],
+  '5-limit-extended': [1, 16/15, 9/8, 6/5, 5/4, 4/3, 25/18, 3/2,
+        8/5, 5/3, 9/5, 15/8, 2],
+  'equal': $.map(_range_13, function(_){return Math.pow(2, _/12);}),
+};
+
+
+function toMidiNote(note) {
+  var notes = ['A', 'A#', 'B', 'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#'];
+  var octave = note.charAt(note.length - 1);
+  var keyNumber = notes.indexOf(note.slice(0, -1));
+  if (keyNumber < 3) keyNumber += 12;
+  return keyNumber + ((octave - 1) * 12) + 1;
+}
+
+
+function getFreq(note) {
+  var keyNumber = toMidiNote(note);
+  var scale = scales[$('input[name=tuning]:checked').val()];
+  return 440 / scale[A_from_C] * scale[(keyNumber + A_from_C - 1) % 12] *
+          Math.pow(2, Math.floor((keyNumber + A_from_C - 49) / 12));
+}
+
+
+function scaleChart() {
+  var width = 1,
+    height = 1,
+    margin = 3;
+
+  function scaleChart(g) {
+    g.each(function(d, i) {
+      var e = d3.select(this);
+      var x = margin + (width - margin * 2) * Math.log(d) / Math.log(2);
+      e.append("line")
+        .attr("class", "scale");
+      e.append("line")
+        .attr("class", "glow")
+        .attr("filter", "url(#blur)")
+        .style("stroke", "steelblue")
+        .style("stroke-width", 3)
+        .style("opacity", 0);
+      e.selectAll("line")
+        .attr("x1", x)
+        .attr("y1", margin)
+        .attr("x2", x)
+        .attr("y2", height - margin);
+    });
+  };
+
+  scaleChart.width = function(x) {
+    if (!arguments.length) return width;
+    width = x;
+    return scaleChart;
+  };
+
+  scaleChart.height = function(x) {
+    if (!arguments.length) return height;
+    height = x;
+    return scaleChart;
+  };
+
+  return scaleChart;
+};
+
+
+$(function () {
+  var keyboard = qwertyHancock(
+      'keyboard', 600, 150,
+      3, 'A5',
+      'white', 'black', '#f3e939');
+  var context = new webkitAudioContext();
+  var oscillators = {};
+
+
+  var width = 440;
+  var height = 20;
+  var chart = scaleChart().width(width).height(height);
+  for (var k in scales) {
+    var d = d3.select("#svg_" + k);
+    d = d.append("svg").attr("width", width).attr("height", height);
+    d.append("svg:defs")
+      .append("svg:filter")
+      .attr("id", "blur")
+      .append("svg:feGaussianBlur")
+      .attr("stdDeviation", 2);
+    d = d.append("g").attr("class", "scale");
+    d.selectAll("g.scale").data(scales[k]).enter().append("g").call(chart);
+  }
+
+
+  keyboard.keyDown(function (note, frequency) {
+    frequency = getFreq(note);
+    var oscillator = context.createOscillator(),
+    gainNode = context.createGainNode();
+    oscillator.type = 0; // sine
+    oscillator.frequency.value = frequency;
+    gainNode.gain.value = 0.3;
+    oscillator.connect(gainNode);
+    gainNode.connect(context.destination); 
+    note = toMidiNote(note);
+    oscillators[note] = oscillator;
+    oscillator.noteOn(0);
+    updateGlow();
+  });
+
+
+  keyboard.keyUp(function (note, frequency) {
+    note = toMidiNote(note);
+    if (oscillators[note] != undefined) {
+      oscillators[note].disconnect();
+      delete oscillators[note];
+    }
+    updateGlow();
+  });
+
+  function updateGlow() {
+    var scale = $('input[name=tuning]:checked').val();
+    d3.selectAll("line.glow").style("opacity", 0);
+    d3.selectAll("#svg_" + scale).selectAll("line.glow")
+    .filter(function (d, i) {
+      for (note in oscillators) {
+        if ((+note + A_from_C - 1) % 12 == i % 12)
+          return true;
+      }
+      return false;
+    }).style("opacity", 1);
+  };
+});
+</script>
+  </body>
+</html>
