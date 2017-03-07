@@ -4,6 +4,3 @@
 [submodule "raphael"]
 	path = raphael
 	url = git://github.com/DmitryBaranovskiy/raphael.git
-[submodule "d3"]
-	path = d3
-	url = git://github.com/mbostock/d3.git
